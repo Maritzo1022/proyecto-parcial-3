@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Captura de Datos</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 20px; }
+    table { border-collapse: collapse; margin-top: 10px; }
+    th, td { border: 1px solid #999; padding: 6px 12px; }
+    th { background: #eee; }
+    #seccionTabla { display: none; }
+  </style>
+</head>
+<body>
+
+  <h2>Captura de Datos</h2>
+
+  <form id="formulario">
+    <input type="hidden" id="id">
+
+    <label for="dia">Día:</label><br>
+    <input type="date" id="dia" required><br><br>
+
+    <label for="dolar">Valor del dólar:</label><br>
+    <input type="number" id="dolar" step="0.01" min="0" required><br><br>
+
+    <button type="button" id="btnRegistrar">Registrar</button>
+    <button type="button" id="btnConsultar">Consultar</button>
+    <button type="button" id="btnModificar">Modificar</button>
+    <button type="button" id="btnEliminar">Eliminar</button>
+  </form>
+
+  <p id="estado"></p>
+
+  <div id="seccionTabla">
+    <h2>Registros</h2>
+    <button type="button" id="btnCerrar">Cerrar tabla</button>
+    <br><br>
+    <input type="text" id="buscador" placeholder="Buscar por día (AAAA-MM-DD)...">
+
+    <table>
+      <thead>
+        <tr>
+          <th>Fecha de registro</th>
+          <th>Día</th>
+          <th>Valor del dólar</th>
+          <th>Acciones</th>
+        </tr>
+      </thead>
+      <tbody id="tabla"></tbody>
+    </table>
+  </div>
+
+  <script>
+    // Pega aquí la URL de tu implementación de Apps Script
+    var URL_SCRIPT = "https://script.google.com/macros/s/AKfycbwxDuqRs6_7tSyZCVpyNoRXH8ZVGW7TpxeOtvYd1-hej_-5H4jRmIk81NI4bivRi9bl/exec";
+    var registros = [];
+    var tablaVisible = false;
+
+    // ---------- Enviar datos al script ----------
+    function enviar(datos) {
+      return fetch(URL_SCRIPT, {
+        method: "POST",
+        body: new URLSearchParams(datos)
+      }).then(function (r) { return r.json(); });
+    }
+
+    // ---------- Botones activos según el estado ----------
+    function actualizarBotones() {
+      var hayRegistro = document.getElementById("id").value !== "";
+      document.getElementById("btnRegistrar").disabled = hayRegistro;
+      document.getElementById("btnModificar").disabled = !hayRegistro;
+      document.getElementById("btnEliminar").disabled = !hayRegistro;
+    }
+
+    function limpiarFormulario() {
+      document.getElementById("formulario").reset();
+      document.getElementById("id").value = "";
+      actualizarBotones();
+    }
+
+    // ---------- REGISTRAR ----------
+    document.getElementById("btnRegistrar").onclick = function () {
+      if (!document.getElementById("formulario").reportValidity()) return;
+
+      document.getElementById("estado").textContent = "Guardando...";
+      enviar({
+        accion: "guardar",
+        dia: document.getElementById("dia").value,
+        dolar: document.getElementById("dolar").value
+      }).then(function (respuesta) {
+        terminarAccion(respuesta, "¡Registro guardado!");
+      });
+    };
+
+    // ---------- CONSULTAR ----------
+    document.getElementById("btnConsultar").onclick = function () {
+      document.getElementById("estado").textContent = "Consultando...";
+      tablaVisible = true;
+      document.getElementById("seccionTabla").style.display = "block";
+      cargarRegistros(function () {
+        document.getElementById("estado").textContent = "";
+      });
+    };
+
+    function cargarRegistros(alTerminar) {
+      fetch(URL_SCRIPT)
+        .then(function (r) { return r.json(); })
+        .then(function (datos) {
+          registros = datos;
+          mostrarTabla();
+          if (alTerminar) alTerminar();
+        });
+    }
+
+    function mostrarTabla() {
+      var filtro = document.getElementById("buscador").value.trim().toLowerCase();
+      var tabla = document.getElementById("tabla");
+      tabla.innerHTML = "";
+
+      registros.forEach(function (reg) {
+        // Filtra por el día ingresado
+        if (!reg.dia.toString().toLowerCase().startsWith(filtro)) return;
+
+        var tr = document.createElement("tr");
+        agregarCelda(tr, new Date(reg.fecha).toLocaleString());
+        agregarCelda(tr, reg.dia);
+        agregarCelda(tr, "$" + parseFloat(reg.dolar).toFixed(2));
+
+        var td = document.createElement("td");
+
+        var btnModificarFila = document.createElement("button");
+        btnModificarFila.textContent = "Modificar registro";
+        btnModificarFila.onclick = function () { cargarEnFormulario(reg); };
+
+        var btnEliminarFila = document.createElement("button");
+        btnEliminarFila.textContent = "Eliminar";
+        btnEliminarFila.onclick = function () { eliminar(reg.id); };
+
+        td.appendChild(btnModificarFila);
+        td.appendChild(btnEliminarFila);
+        tr.appendChild(td);
+        tabla.appendChild(tr);
+      });
+    }
+
+    function agregarCelda(fila, texto) {
+      var td = document.createElement("td");
+      td.textContent = texto;
+      fila.appendChild(td);
+    }
+
+    document.getElementById("buscador").oninput = mostrarTabla;
+
+    // ---------- CERRAR TABLA ----------
+    document.getElementById("btnCerrar").onclick = function () {
+      tablaVisible = false;
+      document.getElementById("seccionTabla").style.display = "none";
+      document.getElementById("buscador").value = "";
+      document.getElementById("tabla").innerHTML = "";
+    };
+
+    // ---------- Pasar el registro al formulario ----------
+    function cargarEnFormulario(reg) {
+      document.getElementById("id").value = reg.id;
+      document.getElementById("dia").value = reg.dia;
+      document.getElementById("dolar").value = reg.dolar;
+
+      document.getElementById("estado").textContent =
+        "Modificando registro: cambia los datos y presiona Modificar";
+      actualizarBotones();
+
+      window.scrollTo(0, 0);
+      document.getElementById("dia").focus();
+    }
+
+    // ---------- MODIFICAR ----------
+    document.getElementById("btnModificar").onclick = function () {
+      var id = document.getElementById("id").value;
+
+      if (id === "") {
+        alert("Primero elige un registro con el botón 'Modificar registro'");
+        return;
+      }
+      if (!document.getElementById("formulario").reportValidity()) return;
+
+      document.getElementById("estado").textContent = "Modificando...";
+      enviar({
+        accion: "editar",
+        id: id,
+        dia: document.getElementById("dia").value,
+        dolar: document.getElementById("dolar").value
+      }).then(function (respuesta) {
+        terminarAccion(respuesta, "¡Registro modificado!");
+      });
+    };
+
+    // ---------- ELIMINAR ----------
+    document.getElementById("btnEliminar").onclick = function () {
+      eliminar(document.getElementById("id").value);
+    };
+
+    function eliminar(id) {
+      if (!confirm("¿Seguro que quieres eliminar este registro?")) return;
+
+      document.getElementById("estado").textContent = "Eliminando...";
+      enviar({ accion: "eliminar", id: id }).then(function (respuesta) {
+        terminarAccion(respuesta, "Registro eliminado");
+      });
+    }
+
+    // ---------- Mensaje al terminar cualquier acción ----------
+    function terminarAccion(respuesta, mensajeOk) {
+      document.getElementById("estado").textContent =
+        respuesta.ok ? mensajeOk : "Error: " + respuesta.mensaje;
+      limpiarFormulario();
+      if (tablaVisible) cargarRegistros();
+    }
+
+    actualizarBotones();
+  </script>
+
+</body>
+</html>
